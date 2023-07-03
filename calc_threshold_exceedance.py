@@ -10,6 +10,13 @@ from iris.analysis import Aggregator
 import iris.plot as iplt
 import iris.quickplot as qplt
 from iris.util import rolling_window
+from pdb import set_trace as browser
+
+dir = "/scratch/dkelley/future_ffdi/data/"
+
+indir1 = dir + '/ffdi_output/'
+indir2 = dir + '/GlobalWarmingLevels/'
+outdir = dir +'/threshold_exceedance/'
 
 #time periods - baseline 1986-2005, three Global Warming Levels (1.5, 2.0, 4.0) above the preindustrial baseline calculated from the model baseline
 #as per the observed warming at Present Day (1986-2005) given in the IPCC 1.5 degrees special report
@@ -90,9 +97,7 @@ def count_spells(data, threshold, axis, spell_length):
 
 def main():
 
-    indir1 = '/net/spice/scratch/hadin/fire/ffdi_output/'
-    indir2 = '/net/spice/scratch/hadin/fire/GlobalWarmingLevels/'
-    outdir = '/net/spice/scratch/hadin/fire/threshold_exceedance/'
+    
     #ensemble members for rcp2.6 future runs
     fut_rcp2_6 = ['akuka', 'akukb', 'akukc', 'akuke', 'akukf', 'akukh','akuki', 'akukj', 'akukk', 'akukl',
                 'akukm', 'akukn', 'akuko', 'akukp', 'akukq', 'akula', 'akulb', 'akulc', 'akuld', 'akule',
@@ -113,7 +118,8 @@ def main():
     global_warming_level = ['1_5', '2_deg', '4_deg'] #global warming levels
     #read in mask for burnable land here;
     mask_dir = '/project/climate_impacts/durban/wp3_results/fire/SAGE_bare_soil_ice_mask_regrid_gt50.pp'
-    non_burnable_land_mask = iris.load_cube(mask_dir)
+    #browser()
+    #non_burnable_land_mask = iris.load_cube(mask_dir)
 
     #loop over the scenarios
     for s, scen in enumerate(scenario_name):
@@ -134,7 +140,7 @@ def main():
             print(e, ensm)
             #read in the daily FFDI values
             #filename = '/net/spice/scratch/hadin/fire/ffdi_output/rcp2_6/ffdi_joined/ffdi_joined_rcp2_6_akuka.nc'
-            filename = indir1 + scen + '/ffdi_joined/ffdi_joined_' + scen + '_' + ensm + '.nc'
+            filename = indir1 + scen + '_joined/ffdi_joined_' + scen + '_' + ensm + '.nc'
             print(filename)
             baseline = load_ensemble_member(1986, 2005, filename)
             print(baseline)
@@ -195,7 +201,7 @@ def main():
                 print(gwl)
                 #read in global warming level file - text file with start and end dates of 20 year period first reaching the GWL
                 #file = '/net/spice/scratch/hadin/fire/GlobalWarmingLevels/rcp2_6/rcp2_6gwl_1_5.txt'
-                file = '/net/spice/scratch/hadin/fire/GlobalWarmingLevels/' + scen + '/' + scen + 'gwl_' + gwl + '.txt'
+                file = dir + '/GlobalWarmingLevels/' + scen + '/' + scen + 'gwl_' + gwl + '.txt'
                 print(file)
                 start_year, end_year = load_text_file_data(file, e)
                 if start_year == 'nan':
