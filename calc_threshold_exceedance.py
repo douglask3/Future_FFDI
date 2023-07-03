@@ -10,7 +10,8 @@ from iris.analysis import Aggregator
 import iris.plot as iplt
 import iris.quickplot as qplt
 from iris.util import rolling_window
-from pdb import set_trace as browser
+from pdb import set_trace
+import os
 
 dir = "/scratch/dkelley/future_ffdi/data/"
 
@@ -96,8 +97,6 @@ def count_spells(data, threshold, axis, spell_length):
 
 
 def main():
-
-    
     #ensemble members for rcp2.6 future runs
     fut_rcp2_6 = ['akuka', 'akukb', 'akukc', 'akuke', 'akukf', 'akukh','akuki', 'akukj', 'akukk', 'akukl',
                 'akukm', 'akukn', 'akuko', 'akukp', 'akukq', 'akula', 'akulb', 'akulc', 'akuld', 'akule',
@@ -140,6 +139,11 @@ def main():
             print(e, ensm)
             #read in the daily FFDI values
             #filename = '/net/spice/scratch/hadin/fire/ffdi_output/rcp2_6/ffdi_joined/ffdi_joined_rcp2_6_akuka.nc'
+            
+            outfile1 = outdir + scen + '/baseline_threshold_exceedance_Very_High_' + scen + '_' + ensm + '_1986_2005.nc'
+
+            set_trace()
+
             filename = indir1 + scen + '_joined/ffdi_joined_' + scen + '_' + ensm + '.nc'
             print(filename)
             baseline = load_ensemble_member(1986, 2005, filename)
@@ -190,7 +194,6 @@ def main():
             #iplt.show()
 
             #write out the baseline threshold exceedance
-            outfile1 = outdir + scen + '/baseline_threshold_exceedance_Very_High_' + scen + '_' + ensm + '_1986_2005.nc'
             #outfile1 = outdir + scen + '/baseline_threshold_exceedance_SEVERE_' + scen + '_' + ensm + '_1986_2005.nc'
             print(outfile1)
             iris.save(annual_avg_bsln, outfile1)
