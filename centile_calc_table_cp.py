@@ -54,9 +54,10 @@ def calculate_weights(shp, cube):
 
 
 def main():
-    indir = '/net/spice/scratch/hadin/fire/thresh_exceed_anomaly/'
-    outdir_scratch = '/net/spice/scratch/hadin/fire/plots/tables/'
-    outdir_plots = '/net/home/h05/hadin/Paper_writing/Fire/new_plots/tables/'
+    dir = "/scratch/dkelley/future_ffdi/"
+    indir = dir + "/data/threshold_exceedance/"
+    outdir_scratch = dir + 'outputs/thresh_exceed_anomaly/tables/'
+    outdir_plots = dir + '/net/home/h05/hadin/Paper_writing/Fire/new_plots/tables/'
     scenario = ['rcp2_6', 'rcp8_5']
     scenario_labels = ['RCP2.6', 'RCP8.5']
     #threshold = ['Very_High','SEVERE']
