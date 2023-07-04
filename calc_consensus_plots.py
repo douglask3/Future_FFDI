@@ -12,7 +12,7 @@ import cartopy
 import numpy.ma
 import iris.quickplot as qplt
 import numpy.ma as ma
-
+from pdb import set_trace
 #Functions
 class MyConsensus(object):
     def __init__(self, levels, values, names, colors):
@@ -94,9 +94,9 @@ class MyConsensus(object):
             norm = mc.BoundaryNorm(self.levels, cmap.N)
             pp = sigcube[0].copy()
             pp.data = (sigcube.data == value).sum(axis=0) / float(sigcube.shape[0])
-            pp.data = np.ma.masked_less(pp.data, self.levels[0])
+            #pp.data = np.ma.masked_less(pp.data, self.levels[0])
             #print(pp.data)
-            #print(pp.data.mask)
+            #print(pp.data.mask)           
             cp = iplt.pcolormesh(pp, cmap=cmap, norm=norm, zorder=9)
             cplist.append(cp)
         return cplist
@@ -146,11 +146,19 @@ def calculate_ensemble_change(ensemble, byears, fyears, thresh, scen, indir, out
          #fcube = get_spei_data(runid, model, rwin, month, futureyears)
 
         #read in baseline data
-        baseline_filename = indir + scen + '/*_' + thresh + '_' + scen + '_' + ensemble_member + '_' + byears + '*.nc'
-        baseline_gwl_cube = iris.load_cube(baseline_filename)
+        
+        #/scratch/dkelley/future_ffdi/data//threshold_exceedance/rcp2_6/baseline_threshold_exceedance_12-23rcp2_6__akuli__1986_2005.nc
+
+        baseline_filename = indir + scen + '/*' + thresh + scen + '__' + ensemble_member + '__' + byears + '*.nc'
+        
+        try:
+            baseline_gwl_cube = iris.load_cube(baseline_filename)
+        except:
+            set_trace()
 
         #read in future data
-        fut_filename = indir + scen + '/*_' + thresh + '_' + scen + '_' + ensemble_member + '_' + fyears + '*.nc'
+        fut_filename = indir + scen + '/*' + thresh + '_' + scen + '_' + ensemble_member + '_' + fyears + '*.nc'
+        
         fut_gwl_cube = iris.load_cube(fut_filename)
 
         # create a new change cube
@@ -197,8 +205,13 @@ def calculate_ensemble_change(ensemble, byears, fyears, thresh, scen, indir, out
         psig.data[masked_cube.data < -1.] = -1.
 
         clist.append(psig)
-
-    return clist.merge_cube()
+    
+    
+    try:
+        out =  clist.merge_cube()
+    except:
+        set_trace()
+    return out
 
 
 #plot the consensus
@@ -290,10 +303,11 @@ def add_plot_features(ax, extent=None):
 def main():
     
     setup = SETUP1
-    indir = '/net/spice/scratch/hadin/fire/threshold_exceedance/'
-    outdir = '/net/spice/scratch/hadin/fire/thresh_exceed_anomaly/'
-    plotdir = '/net/spice/scratch/hadin/fire/plots/consensus_plots/'
-    plotdir2 = '/net/home/h05/hadin/Paper_writing/Fire/new_plots/consensus_plots/'
+    dir = "/scratch/dkelley/future_ffdi/"
+    indir = dir + "/data/threshold_exceedance/"
+    outdir = dir + 'outputs/thresh_exceed_anomaly/'
+    plotdir = dir + 'figs/consensus_plots/'
+    plotdir2 = dir + 'figs/consensus_plots_new/'
     #ensemble members for rcp2.6 future runs
     fut_rcp2_6 = ['akuka', 'akukb', 'akukc', 'akuke', 'akukf', 'akukh','akuki', 'akukj', 'akukk', 'akukl',
                 'akukm', 'akukn', 'akuko', 'akukp', 'akukq', 'akula', 'akulb', 'akulc', 'akuld', 'akule',
@@ -310,8 +324,8 @@ def main():
                 'aldsi', 'aldsj', 'aldsl', 'aldsn', 'aldso', 'aldsp', 'aldsq']
     scenario = ['rcp2_6', 'rcp8_5']
     scenario_labels = ['RCP2.6', 'RCP8.5']
-    threshold = ['Very_High','SEVERE']
-    threshold_labels = ['Very High', 'Severe']
+    threshold = ['4-15', '12-23', '23-10000000']#,'SEVERE']
+    threshold_labels = ['Control Burn', 'High', 'Very High']#, 'Severe']
     byears = '1986_2005'
     baseline_label = '1986-2005'
     fyears = ['1_5', '2_deg', '4_deg']
@@ -365,7 +379,7 @@ def main():
                     ensemble = ensemble_name
                     x = len(ensemble_name)
                 else:
-                    check_files = glob.glob(indir + scen + '/future_threshold_exceedance_' + thresh + '_' + scen + '_*_' + gwl + '*.nc')
+                    check_files = glob.glob(indir + scen + '/future_threshold_exceedance' + thresh + '_' + scen + '_*_' + gwl + '*.nc')
                     #print(check_files)
                     #print('HELLLOO')
                     check_files.sort()
@@ -378,10 +392,12 @@ def main():
                         for string in check_files:
                             print('s')
                             print(s)
-                            if t == 0:
-                                a = string[103:108] # for Very High files
+
+                            a = [i for i in ensemble_name if i in string]
+                            if len(a) == 1:
+                                a = a[0]
                             else:
-                                a = string[100:105] #for severe files
+                                set_trace()
                             new_ensemble.append(a)
                         #print(new_ensemble)
                         ensemble = new_ensemble
