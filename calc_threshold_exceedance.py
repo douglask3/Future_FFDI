@@ -96,7 +96,7 @@ def count_spells(data, threshold, axis, spell_length):
 
 
 
-def main():
+def main(threshold_level):
     #ensemble members for rcp2.6 future runs
     fut_rcp2_6 = ['akuka', 'akukb', 'akukc', 'akuke', 'akukf', 'akukh','akuki', 'akukj', 'akukk', 'akukl',
                 'akukm', 'akukn', 'akuko', 'akukp', 'akukq', 'akula', 'akulb', 'akulc', 'akuld', 'akule',
@@ -140,63 +140,64 @@ def main():
             #read in the daily FFDI values
             #filename = '/net/spice/scratch/hadin/fire/ffdi_output/rcp2_6/ffdi_joined/ffdi_joined_rcp2_6_akuka.nc'
             
-            outfile1 = outdir + scen + '/baseline_threshold_exceedance_Very_High_' + scen + '_' + ensm + '_1986_2005.nc'
-
-            set_trace()
-
+            outfile1 = outdir + scen + '/baseline_threshold_exceedance_' + \
+                        '-'.join(str(i) for i in threshold_level) + scen + '_' + \
+                        '_' + ensm + '_' + '_1986_2005.nc'
+            
             filename = indir1 + scen + '_joined/ffdi_joined_' + scen + '_' + ensm + '.nc'
-            print(filename)
-            baseline = load_ensemble_member(1986, 2005, filename)
-            print(baseline)
-            print ('max:', baseline.data.max())
-            #print ('min:', baseline.data.min())
-            #print ('mean:', baseline.data.mean())
-
-            #calculate the threshold exceedance in the baseline period for multiple thresholds
-            # Make an aggregator from the user function.
-            SPELL_COUNT = Aggregator('spell_count',
-                             count_spells,
-                             units_func=lambda units: 1)
-
-            # Define the parameters of the test.
-            #calc FFDI threshold exceedance - Very High (and above) 24+ as this is considered Fire Weather Season
-            #look at every cell for where it is 24 or above (i.e. above 23) and count the number of days above then divide by 20
-            #to get the annual average
-            threshold_level = 23 #Very High FFDI
-            #also caluclate the number of days above the 'severe' FFDI level (50+) to look at more dangerous events
-            #threshold_level = 49 #severe FFDI
+            SPELL_COUNT = Aggregator('spell_count', count_spells,
+                                     units_func=lambda units: 1)
+            
             spell_years = 1
+            if os.path.isfile(outfile1):  
+                annual_avg_bsln = iris.load_cube(outfile1)
+            else:
+                print(filename)
+                baseline = load_ensemble_member(1986, 2005, filename)
+                print(baseline)
+                print ('max:', baseline.data.max())
+                #print ('min:', baseline.data.min())
+                #print ('mean:', baseline.data.mean())
+
+                #calculate the threshold exceedance in the baseline period for multiple thresholds
+                # Make an aggregator from the user function.
+                
+
+                # Define the parameters of the test.
+                #calc FFDI threshold exceedance - Very High (and above) 24+ as this is considered Fire Weather Season
+                #look at every cell for where it is 24 or above (i.e. above 23) and count the number of days above then divide by 20
+                #to get the annual average
+                
+                #also caluclate the number of days above the 'severe' FFDI level (50+) to look at more dangerous events
+                #threshold_level = 49 #severe FFDI
 
             # Calculate the statistic.
-            fire_periods_bsln = baseline.collapsed('time', SPELL_COUNT,
-                                   threshold=threshold_level,
-                                   spell_length=spell_years)
+                
+                fire_periods_bsln = baseline.collapsed('time', SPELL_COUNT, threshold=threshold_level[0], spell_length=spell_years) - baseline.collapsed('time', SPELL_COUNT, threshold=threshold_level[1], spell_length=spell_years)
+                
+                fire_periods_bsln.rename('Number of days over threshold')
+                print(fire_periods_bsln)
+                print ('max:', fire_periods_bsln.data.max())
+                #print ('min:', fire_periods_bsln.data.min())
+                #print ('mean:', fire_periods_bsln.data.mean())
 
+                #convert into an annual mean by dividing by 20 to give annual avg number of days over the threshold
+                annual_avg_bsln = fire_periods_bsln / 20
+                print(annual_avg_bsln)
+                print ('max:', annual_avg_bsln.data.max())
+                #print ('min:', annual_avg_bsln.data.min())
+                #print ('mean:', annual_avg_bsln.data.mean())
+                #write out the baseline threshold exceedance
+                #outfile1 = outdir + scen + '/baseline_threshold_exceedance_SEVERE_' + scen + '_' + ensm + '_1986_2005.nc'
+                print(outfile1)
+                iris.save(annual_avg_bsln, outfile1)
 
-            fire_periods_bsln.rename('Number of days over threshold')
-            print(fire_periods_bsln)
-            print ('max:', fire_periods_bsln.data.max())
-            #print ('min:', fire_periods_bsln.data.min())
-            #print ('mean:', fire_periods_bsln.data.mean())
-
-            #convert into an annual mean by dividing by 20 to give annual avg number of days over the threshold
-            annual_avg_bsln = fire_periods_bsln / 20
-            print(annual_avg_bsln)
-            print ('max:', annual_avg_bsln.data.max())
-            #print ('min:', annual_avg_bsln.data.min())
-            #print ('mean:', annual_avg_bsln.data.mean())
-
-            #need to apply a mask for burnable land e.g. mask out non-burnable land
+                #need to apply a mask for burnable land e.g. mask out non-burnable land
 
             # Plot the results.
-            #qplt.contourf(annual_avg, cmap='RdYlBu_r')
+            #qplt.contourf(annual_avg_bsln, cmap='RdYlBu_r')
             #plt.gca().coastlines()
             #iplt.show()
-
-            #write out the baseline threshold exceedance
-            #outfile1 = outdir + scen + '/baseline_threshold_exceedance_SEVERE_' + scen + '_' + ensm + '_1986_2005.nc'
-            print(outfile1)
-            iris.save(annual_avg_bsln, outfile1)
 
             #loop over the three global warming levels to
             #calculate the threshold exceedance in the future
@@ -217,31 +218,42 @@ def main():
                     end_year = int(end_year)
                     print('start year', start_year)
                     print('end year', end_year)
+                    
+                    outfile2 = outdir + scen + '/future_threshold_exceedance' + \
+                        '-'.join(str(i) for i in threshold_level) + '_' + \
+                         scen + '_' + ensm + '_' + gwl + '_' + str(start_year) + \
+                         '_' + str(end_year) + '.nc'
+                    if os.path.isfile(outfile2):  
+                        annual_avg_future = iris.load_cube(outfile2)
+                    else:
+                        future = load_ensemble_member(start_year, end_year, filename)
+                        print('future: ', future)
+                        print(future.coords('year'))
+                        print ('max:', future.data.max())
+                        #print ('min:', future.data.min())
+                        #print ('mean:', future.data.mean())
 
+                        # Calculate the statistic.
+                       
+                        fire_periods_future = future.collapsed('time', SPELL_COUNT, threshold=threshold_level[0], spell_length=spell_years) - future.collapsed('time', SPELL_COUNT, threshold=threshold_level[1], spell_length=spell_years)
+                        
 
-                    future = load_ensemble_member(start_year, end_year, filename)
-                    print('future: ', future)
-                    print(future.coords('year'))
-                    print ('max:', future.data.max())
-                    #print ('min:', future.data.min())
-                    #print ('mean:', future.data.mean())
-
-                    # Calculate the statistic.
-                    fire_periods_future = future.collapsed('time', SPELL_COUNT,
-                                   threshold=threshold_level,
-                                   spell_length=spell_years)
-
-                    fire_periods_future.rename('Number of days over threshold')
-                    print(fire_periods_future)
-                    print ('max:', fire_periods_future.data.max())
-                    #print ('min:', fire_periods_future.data.min())
-                    #print ('mean:', fire_periods_future.data.mean())
-
-                    #convert into an annual mean by dividing by 20 to give annual avg number of days over the threshold
-                    annual_avg_future = fire_periods_future / 20
+                        fire_periods_future.rename('Number of days over threshold')
+                        print(fire_periods_future)
+                        print ('max:', fire_periods_future.data.max())
+                        #print ('min:', fire_periods_future.data.min())
+                        #print ('mean:', fire_periods_future.data.mean())
+                        annual_avg_future = fire_periods_future / 20
+                        #write out future threshold exceedance
+                        
+                        #outfile2 = outdir + scen + '/future_threshold_exceedance_SEVERE_' + scen + '_' + ensm + '_' + gwl + '_' + str(start_year) + '_' + str(end_year) + '.nc'
+                        print(outfile2)
+                        iris.save(annual_avg_future, outfile2)
+                        #convert into an annual mean by dividing by 20 to give annual avg number of days over the threshold
+                    
                     print(annual_avg_future)
                     print ('max:', annual_avg_future.data.max())
-                    #print ('min:', annual_avg_future.data.min())
+                        #print ('min:', annual_avg_future.data.min())
                     #print ('mean:', annual_avg_future.data.mean())
 
                     # Plot the results.
@@ -251,13 +263,12 @@ def main():
 
                     #need to apply a mask for burnable land e.g. mask out non-burnable land
 
-                    #write out future threshold exceedance
-                    outfile2 = outdir + scen + '/future_threshold_exceedance_Very_High_' + scen + '_' + ensm + '_' + gwl + '_' + str(start_year) + '_' + str(end_year) + '.nc'
-                    #outfile2 = outdir + scen + '/future_threshold_exceedance_SEVERE_' + scen + '_' + ensm + '_' + gwl + '_' + str(start_year) + '_' + str(end_year) + '.nc'
-                    print(outfile2)
-                    iris.save(annual_avg_future, outfile2)
 
 
 
 if __name__ == '__main__':
-    main()
+
+    #Very High FFDI
+    main(threshold_level = [4, 15])
+    main(threshold_level = [12, 23])
+    main(threshold_level = [23, 10000000])
