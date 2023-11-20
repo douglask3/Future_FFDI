@@ -1,6 +1,9 @@
 '''Feb 2020 read in anomalies of number of days above the ffdi threshold, average for a region and then calculate the 10th, 50th, 90th percentiles and write out in a table '''
 
 #imports
+import sys
+sys.path.append('../MaxEnt/libs/')
+from constrain_cubes_standard import *
 import iris
 import numpy as np
 import iris.coord_categorisation
@@ -12,6 +15,7 @@ import cartopy
 import numpy.ma as ma
 import iris.quickplot as qpl
 import ascend
+from pdb import set_trace
 
 #Functions
 
@@ -46,7 +50,9 @@ def calculate_weights(shp, cube):
     """
     land_area = iris.analysis.cartography.area_weights(cube)
     weights_cubes = []
+    
     shp.mask_cube_inplace(cube.copy(), minimum_weight=0.1, weight_cubes=weights_cubes)
+    
     weights = weights_cubes[0].data * land_area  # shape weights * area (either crop value or cartogrpahy
     if weights.shape != cube.shape:
         weights = iris.util.broadcast_to_shape(weights, cube.shape, (1, 2))
@@ -55,15 +61,15 @@ def calculate_weights(shp, cube):
 
 def main():
     dir = "/scratch/dkelley/future_ffdi/"
-    indir = dir + "/data/threshold_exceedance/"
-    outdir_scratch = dir + 'outputs/thresh_exceed_anomaly/tables/'
-    outdir_plots = dir + '/net/home/h05/hadin/Paper_writing/Fire/new_plots/tables/'
+    indir = dir + "/outputs/thresh_exceed_anomaly/"
+    outdir_scratch = dir + '/outputs/thresh_exceed_anomaly/tables/'
+    outdir_plots = 'figs/'#dir + '/net/home/h05/hadin/Paper_writing/Fire/new_plots/tables/'
     scenario = ['rcp2_6', 'rcp8_5']
     scenario_labels = ['RCP2.6', 'RCP8.5']
     #threshold = ['Very_High','SEVERE']
     #threshold_labels = ['Very High', 'Severe']
-    threshold = ['High']
-    threshold_labels = ['High']    
+    threshold = ['4-15']
+    threshold_labels = ['4-15']    
     global_warming_level = ['1_5', '2_deg', '4_deg']
     gwl_labels = ['1.5 degrees', '2.0 degrees', '4.0 degrees']
     region = ['Global', 'Australia', 'Brazil', 'United States']
@@ -133,7 +139,8 @@ def main():
                         #'/net/spice/scratch/hadin/fire/thresh_exceed_anomaly/Anomaly_of_threshold_exceedance_rcp2_6_Very_High_akunp_2_deg.nc'
                         if t == 0:
                             #a = string[108:113]
-                            a = string[103:108]
+                            #a = string[103:108]
+                            a = string[111:116]
                             #print('a', a)
                         #if t == 1:
                         #    a = string[105:110]
@@ -156,7 +163,10 @@ def main():
                                 region_filename = indir + scen + '/Anomaly_of_threshold_exceedance_' + scen + '_' + thresh + '_' + ensm + '_' + gwl + '.nc'
                                 #region_filename = indir + scen + '/Anomaly_of_threshold_exceedance_' + scen + '_' + thresh + '_' + ensm + '_' + gwl + 'masked.nc' # for the masked data
                                 print(region_filename)
-                                region_cube = iris.load_cube(region_filename)
+                                try:
+                                    region_cube = iris.load_cube(region_filename)
+                                except:
+                                    set_trace()
                                 #print(region_cube)
 
                                 #apply the non burnable land mask
@@ -208,7 +218,7 @@ def main():
                         if r > 0:
                             shp = country_shape(reg)
                             ensemble_list = []
-
+                            
                             #loop over ensemble members to read in, average and append to ensemble cube
                             for e, ensm in enumerate(ensemble_model_name):
                                 region_filename = indir + scen + '/Anomaly_of_threshold_exceedance_' + scen + '_' + thresh + '_' + ensm + '_' + gwl + '.nc'
@@ -222,8 +232,10 @@ def main():
                                 for coord in region_cube.coord(axis='y'), region_cube.coord(axis='x'):
                                     if coord.has_bounds() is False:
                                         coord.guess_bounds()
-
-                                reg_weights = calculate_weights(shp, region_cube)  # get weights values
+                                region_cube = constrain_natural_earth(region_cube.copy(), reg, constrain = False)
+                                reg_weights = iris.analysis.cartography.area_weights(region_cube)
+                                #weights = iris.analysis.cartography.area_weights(cube)
+                                #reg_weights = calculate_weights(shp, region_cube)  # get weights values
                                 #print(type(bsln_weights))
                                 reg_tmp = reg_weights
                                 if len(reg_weights.shape) != len(region_cube.shape):
