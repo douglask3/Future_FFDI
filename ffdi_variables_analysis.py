@@ -42,9 +42,9 @@ def get_ens_df():
                 'aldsi', 'aldsj', 'aldsl', 'aldsn', 'aldso', 'aldsp', 'aldsq']
 
     # Create a pandas dataframe from the above lists
-    rcpdict = {'rcp': 'rcp2.6', 'hist': hist_rcp2_6, 'fut': fut_rcp2_6}
-    df = pd.DataFrame(rcpdict)
-    df = df.append(pd.DataFrame({'rcp': 'rcp8.5', 'hist': hist_rcp8_5, 'fut': fut_rcp8_5}), ignore_index=True)
+    df2p6 = pd.DataFrame({'rcp': 'rcp2.6', 'hist': hist_rcp2_6, 'fut': fut_rcp2_6})
+    df8p5 = pd.DataFrame({'rcp': 'rcp8.5', 'hist': hist_rcp8_5, 'fut': fut_rcp8_5})
+    df = pd.concat([df2p6, df8p5], ignore_index=True)
     df['gwl_1_5_start'] = np.nan
     df['gwl_2_start'] = np.nan
     df['gwl_4_start'] = np.nan
@@ -54,8 +54,8 @@ def get_ens_df():
     gwl_dir = '/data/users/hadhy/ESMS/fire_paper/GlobalWarmingLevels/*/*.txt'
     gwl_files = glob.glob(gwl_dir)
     for f in gwl_files:
-        rcp = os.path.dirname(f).split('/')[-1].replace('_','.')
-        gwl = 'gwl_' + os.path.basename(f).split('gwl_')[1].split('.txt')[0].replace('_deg','')
+        rcp = os.path.dirname(f).split('/')[-1].replace('_', '.')
+        gwl = 'gwl_' + os.path.basename(f).split('gwl_')[1].split('.txt')[0].replace('_deg', '')
         print(rcp, gwl)
         # Read the csv file
         gwldf = pd.read_csv(f, header=None, names=['fut', gwl+'_start', 'end_yr'], na_values=['nan', ' nan', ' nan '], dtype={'fut': 'string', gwl+'_start':'Int64', 'end_yr':'Int64'})
@@ -117,19 +117,20 @@ def load_files(file_list, start_yr):
         return cubelist
 
 
-def get_data_to_plot(type, bl_start_yr, df):
+def get_data_to_plot(type, bl_start_yr, df, climatology=True):
     '''
 
-    :param type:
-    :param bl_start_yr:
-    :param df:
+    :param type: Could be any one of Baseline, GWL1.5, GWL2, GWL4, GWL1.5_change, GWL2_change, GWL4_change
+    :param bl_start_yr: baseline start year usually 1986
+    :param df: Simple dataframe of the start year for each GWL and hist & fut jobid
+    :param climatology: boolean to say whether to create a climatology for each grid cell,
+    or to just export to csv the full daily data (useful for correlation plots)
     :return:
     '''
-    # Type could be any of the following:
-    # Baseline, GWL1.5, GWL2, GWL4, GWL1.5_change, GWL2_change, GWL4_change
 
     # Root dir of the data
-    indir = '/scratch/hadin/fire/ffdi_inputs/'
+    indir = '/scratch/hadhy/fire/ffdi_input_variables/'
+    # indir = '/scratch/hadin/fire/ffdi_inputs/'
 
     # Create an empty variables
     country_cube = None
@@ -145,7 +146,7 @@ def get_data_to_plot(type, bl_start_yr, df):
     column_names = ['Date', 'Ensemble_Member', 'Country', 'GWL', 'FFDI', 'RH', 'Temperature', 'Precipitation', 'Wind_Speed', 'Soil_Moisture']
     odf = pd.DataFrame(columns=column_names)
 
-    # Loop through each row of the table
+    # Loop through each row of the table (contains the RCP & future jobid)
     for i, row in df.iterrows():
         print(i, row['rcp'], row['hist'], row['fut'])
         rcp = row['rcp'].replace('.', '_')
@@ -153,7 +154,7 @@ def get_data_to_plot(type, bl_start_yr, df):
         ##########
         # Get the pre-calculated FFDI (saved as a timeseries of baseline + future, based on future ens_member_id
         print('   Loading FFDI ... ', end='')
-        ffdi_file = '/scratch/hadin/fire/ffdi_output/'+rcp+'/ffdi_joined_'+rcp+'_'+row['fut']+'.nc'
+        ffdi_file = '/scratch/hadhy/fire/ffdi_output/'+rcp+'/ffdi_joined_'+rcp+'_'+row['fut']+'.nc'
         print(ffdi_file)
         ffdi_cube = iris.load_cube(ffdi_file) # baseline and futurev
         # Time subset of ffdi
@@ -225,16 +226,22 @@ def get_data_to_plot(type, bl_start_yr, df):
         except:
             print('Don\'t worry about it')
 
-        cell_climatologies = odf.groupby(['CellX', 'CellY', 'Ensemble_Member', 'Country', 'GWL', 'RCP']).agg(
-            {'FFDI': 'mean', 'RH': 'mean', 'Temperature': 'mean', 'Precipitation': 'mean', 'Wind_Speed': 'mean',
-             'Soil_Moisture': 'mean'})
-        cell_climatologies.reset_index(inplace=True)
-        cell_climatologies.to_csv('/data/users/hadhy/ESMS/fire_paper/odf_'+str(i)+'_'+type+'.csv', index=False)
+        # pdb.set_trace()
 
-    return cell_climatologies
+        if climatology:
+            # TODO: Check what this line does, and does it introduce any inconsistencies esp for GWL1.5
+            cell_climatologies = odf.groupby(['CellX', 'CellY', 'Ensemble_Member', 'Country', 'GWL', 'RCP']).agg(
+                {'FFDI': 'mean', 'RH': 'mean', 'Temperature': 'mean', 'Precipitation': 'mean', 'Wind_Speed': 'mean',
+                 'Soil_Moisture': 'mean'})
+            cell_climatologies.reset_index(inplace=True)
+            cell_climatologies.to_csv('/data/users/hadhy/ESMS/fire_paper/odf_climatology_'+str(i)+'_'+type+'.csv', index=False)
+        else:
+            odf.to_csv('/data/users/hadhy/ESMS/fire_paper/odf_allcells_'+str(i)+'_'+type+'.csv', index=False)
+
+    # return cell_climatologies
 
 
-def mask_and_extract(cubelist, ffdi, ffdi_vh_count, country_cube, ens, type, rcp, odf):
+def mask_and_extract(cubelist, ffdi, ffdi_vh_count, country_cube, ens, type, rcp, odf, ffdi_threshold=20):
     '''
     Uses the ffdi_mask and country_cube to mask data from cubelist and
         puts it into a dataframe that can be used for plotting
@@ -263,7 +270,7 @@ def mask_and_extract(cubelist, ffdi, ffdi_vh_count, country_cube, ens, type, rcp
 
         ffdi_cntry = ffdi.copy()
         # Get 2D mask of cells with < 20 V. High FFDI days from baseline period for this country
-        data2d = ma.masked_where((country_cube.data.data != v) | (ffdi.data.data < 20), ffdi.data.data)
+        data2d = ma.masked_where((country_cube.data.data != v) | (ffdi.data.data < ffdi_threshold), ffdi.data.data)
         # Broadcast the 2D mask to the ffdi (daily) cube shape
         basemask = np.broadcast_to(data2d.mask, ffdi.shape)
         # Add to the mask the days in the timeseries when FFDI < 24
@@ -560,6 +567,7 @@ def main():
 
     df = pd.concat([df2p_baseline, df2p_gwl1p5, df2p_gwl2, df2p_gwl4], ignore_index=True)
     plot_rh_vs_temp(df)
+
 
 if __name__ == '__main__':
     main()
