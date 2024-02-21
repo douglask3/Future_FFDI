@@ -20,18 +20,23 @@ def get_characters_after_string(input_string, search_string, num_characters):
         return "Search string not found in input string"
 
 def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
-
+    
     out_file = 'temp/time_in_catigory_' + name + '_' + rcp + GWL + member + str(nyear) + '.csv'
-
+    
+    print(out_file)
     if os.path.isfile(out_file):
         out = np.genfromtxt(out_file, delimiter=',')
         return np.transpose(out[1:,1:])
     ffdi_file = ffdis_dir + rcp + '_joined' +'/ffdi_joined_' + rcp + '_' + member + '.nc'
     ffdi = iris.load_cube(ffdi_file)
-    
+    print(ffdi_file)
     GWL_file = GWL_dir + rcp + '/' + rcp + 'gwl_' + GWL + '.txt'
-    gwls = open(GWL_file).read()
-    year = get_characters_after_string(gwls, member, 6)[2:]
+    
+    if GWL == 'None':
+        year = '2005'
+    else:
+        gwls = open(GWL_file).read()
+        year = get_characters_after_string(gwls, member, 6)[2:]
     if year == 'nan,':
         out = np.empty((len(ffdi_ranges)))
         out[:] = np.nan
@@ -40,6 +45,7 @@ def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
 
         index = np.where((cube_years > float(year)- nyear - 1) & \
                          (cube_years < float(year)))[0]
+        
         cube = ffdi[index].copy()
     
         iris.coord_categorisation.add_day_of_year(cube, 'time')
@@ -65,7 +71,7 @@ def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
         
     df = pd.DataFrame(out)
     df.to_csv(out_file)
-    
+    out = out[None, :]
     return out
 
 
@@ -95,13 +101,25 @@ if __name__=="__main__":
                           'aldsq']}
     
     scenario_name = ['rcp2_6', 'rcp8_5']
-    global_warming_level = ['1_5', '2_deg', '4_deg']
+    global_warming_level = ['None', '1_5', '2_deg', '4_deg']
     ffdi_ranges = [[0.0, 12.0], [12.0, 24.0], [24.0, 50.0],[50.0, 75.0], [75.0, 100.0], [100.0, 9999999.0]]
-
+    out = []
+    colnames = []
     for sc in scenario_name:
-        for member in members['rcp2_6']:
-            for gwl in global_warming_level:
-                calculate_time(sc, member, gwl)#, ffdi_ranges[0])
-
+         for gwl in global_warming_level:
+            outi = np.array([calculate_time(sc, member, gwl)[0,:] for member in members[sc]])#, ffdi_ranges[0])
+            outi = outi*365
+            out.append(np.transpose(np.percentile(outi, np.array([10, 50, 90]), axis = 0)))
+            cname = sc + '-' + gwl + '-'
+            colnames.append(cname + '10')
+            colnames.append(cname + '50')
+            colnames.append(cname + '90')
+    out = np.concatenate(out, axis=1)
+    #np.savetxt('outputs/cal_time.csv', out, delimiter=',',
+     #          header=','.join(colnames), comments='', fmt='%0.8f')
+    rownames = [str(x[0]) + '-' + str(x[1]) for x in ffdi_ranges]
+    df = pd.DataFrame(out, index=rownames, columns=colnames)
+    df = df.to_csv('outputs/cal_time.csv')
+    set_trace()
 
 
