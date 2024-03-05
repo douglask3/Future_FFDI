@@ -11,6 +11,8 @@ from pdb import set_trace
 from datetime import datetime, timedelta
 import os
 import pandas as pd 
+from libs.constrain_cubes_standard import *
+
 
 def get_characters_after_string(input_string, search_string, num_characters):
     index = input_string.find(search_string)
@@ -19,9 +21,9 @@ def get_characters_after_string(input_string, search_string, num_characters):
     else:
         return "Search string not found in input string"
 
-def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
+def calculate_time(rcp, member, GWL, nyear = 20, country = ''):
     
-    out_file = 'temp/time_in_catigory_' + name + '_' + rcp + GWL + member + str(nyear) + '.csv'
+    out_file = 'temp/time_in_catigory_' + country + '_' + rcp + GWL + member + str(nyear) + '.csv'
     
     print(out_file)
     if os.path.isfile(out_file):
@@ -29,6 +31,8 @@ def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
         return np.transpose(out[1:,1:])
     ffdi_file = ffdis_dir + rcp + '_joined' +'/ffdi_joined_' + rcp + '_' + member + '.nc'
     ffdi = iris.load_cube(ffdi_file)
+    if country != '':
+        ffdi = constrain_natural_earth(ffdi, country)
     print(ffdi_file)
     GWL_file = GWL_dir + rcp + '/' + rcp + 'gwl_' + GWL + '.txt'
     
@@ -74,6 +78,28 @@ def calculate_time(rcp, member, GWL, nyear = 20, name = ''):
     out = out[None, :]
     return out
 
+def for_region(country):
+    out = []
+    colnames = []
+    for sc in scenario_name:
+         for gwl in global_warming_level:
+            outi = np.array([calculate_time(sc, member, gwl, country = country)[0,:] \
+                             for member in members[sc]])
+            outi = outi*365
+            out.append(np.transpose(np.percentile(outi, np.array([10, 50, 90]), axis = 0)))
+            cname = sc + '-' + gwl + '-'
+            colnames.append(cname + '10')
+            colnames.append(cname + '50')
+            colnames.append(cname + '90')
+    out = np.concatenate(out, axis=1)
+    #np.savetxt('outputs/cal_time.csv', out, delimiter=',',
+     #          header=','.join(colnames), comments='', fmt='%0.8f')
+    rownames = [str(x[0]) + '-' + str(x[1]) for x in ffdi_ranges]
+    df = pd.DataFrame(out, index=rownames, columns=colnames)
+    df = df.to_csv('outputs/cal_time-' + country + '.csv')
+    
+
+
 
 if __name__=="__main__":
     dir = "/scratch/dkelley/future_ffdi/data/"
@@ -103,23 +129,10 @@ if __name__=="__main__":
     scenario_name = ['rcp2_6', 'rcp8_5']
     global_warming_level = ['None', '1_5', '2_deg', '4_deg']
     ffdi_ranges = [[0.0, 12.0], [12.0, 24.0], [24.0, 50.0],[50.0, 75.0], [75.0, 100.0], [100.0, 9999999.0]]
-    out = []
-    colnames = []
-    for sc in scenario_name:
-         for gwl in global_warming_level:
-            outi = np.array([calculate_time(sc, member, gwl)[0,:] for member in members[sc]])#, ffdi_ranges[0])
-            outi = outi*365
-            out.append(np.transpose(np.percentile(outi, np.array([10, 50, 90]), axis = 0)))
-            cname = sc + '-' + gwl + '-'
-            colnames.append(cname + '10')
-            colnames.append(cname + '50')
-            colnames.append(cname + '90')
-    out = np.concatenate(out, axis=1)
-    #np.savetxt('outputs/cal_time.csv', out, delimiter=',',
-     #          header=','.join(colnames), comments='', fmt='%0.8f')
-    rownames = [str(x[0]) + '-' + str(x[1]) for x in ffdi_ranges]
-    df = pd.DataFrame(out, index=rownames, columns=colnames)
-    df = df.to_csv('outputs/cal_time.csv')
-    set_trace()
+    countries = ['Australia', '', 'Brazil', 'United States of America'][1]
+    for_region(countries)
+   # [for_region(country) for country in countries]
 
-
+    #ffdi_ranges = [[0.0, 4.0], [4.0, 15.0], [15.0, 9999999.0]]
+    #for_region(countries)
+    #[for_region(country) for country in countries]
