@@ -1,4 +1,8 @@
-import os, sys
+import os
+import sys
+os.environ['USE_PYGEOS'] = '0'
+
+import dask.array.ma
 import iris
 import glob
 import pandas as pd
@@ -6,9 +10,12 @@ import numpy as np
 import numpy.ma as ma
 import cftime
 from iris.util import unify_time_units
+import geopandas as gpd
 sys.path.append('/home/h02/hadhy/GitHub/wcssp_casestudies')
 import std_functions as sf
 import subprocess
+import warnings
+warnings.simplefilter('ignore')
 import pdb
 
 def get_ens_df():
@@ -117,6 +124,195 @@ def load_files(file_list, start_yr):
         return cubelist
 
 
+def get_variables_by_ffdi_theshold(df, mint, maxt):
+    """
+    Gets a massive dataframe of FFDI value (>=12) with each variable per grid cell per day
+    :param df: Dataframe that tells us for each ens member what the start year is for each GWL
+    :param mint: masks < mint
+    :param maxt: if no maximum, use np.inf
+    :return:
+    """
+
+    # Root dir of the data
+    indir = '/scratch/hadhy/fire/ffdi_input_variables/'
+
+    # Baseline start year
+    bl_start_yr = 1986
+
+    vars = ['relative_humidity', 'soil_moisture_content_top_metre', 'precipitation_in_mpersec',
+            'windspeed_in_km_per_hr', 'air_temperature']
+
+    # Make empty output dataframe
+    column_names = ['t', 'x', 'y', 'gwl', 'ensemble_member', 'rcp', 'FFDI', 'air_temperature', 'precipitation_in_mpersec', 'relative_humidity', 'soil_moisture_content_top_metre', 'windspeed_in_km_per_hr']
+    df_final = pd.DataFrame(columns=column_names)
+
+    # Loop through each row of the table (contains the RCP & future jobid)
+    for i, row in df.iterrows():
+        print(i, row['rcp'], row['hist'], row['fut'])
+        rcp = row['rcp'].replace('.', '_')
+
+        ofile = f'/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_12_to_24_temp{i}.csv'
+        if os.path.isfile(ofile):
+            df_final = pd.read_csv(ofile)
+            continue
+        else:
+            last_ofile = f'/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_12_to_24_temp{i-1}.csv'
+            if os.path.isfile(last_ofile):
+                df_final = pd.read_csv(last_ofile)
+
+            ##########
+            # Get the pre-calculated FFDI (saved as a timeseries of baseline + future, based on future ens_member_id
+            print('   Loading FFDI ... ')
+            ffdi_filelist = glob.glob('/scratch/hadhy/fire/ffdi_output/'+rcp+'/ffdi_'+rcp+'_'+row['hist']+'*.nc')
+            ffdi_filelist.extend(glob.glob('/scratch/hadhy/fire/ffdi_output/'+rcp+'/ffdi_'+rcp+'_'+row['fut']+'*.nc'))
+
+            # Load the files into an iris cubelist
+            ffdi_cubes = iris.load(ffdi_filelist)  # includes baseline and future FFDI
+
+            # Remove some things to allow for the cube to be concatenated
+            for j in range(len(ffdi_cubes)):
+                ffdi_cubes[j].remove_coord('forecast_period')
+                ffdi_cubes[j].remove_coord('year')
+
+            # Now unify time coords and concatenate
+            unify_time_units(ffdi_cubes)
+            ffdi_cube = ffdi_cubes.concatenate_cube()
+
+            # Now get FFDI variables
+            var_filelist = sorted(glob.glob(f"{indir}{rcp}/ffdi_input_variables_{rcp}_{row['hist']}_*"))
+            var_filelist.extend(sorted(glob.glob(f"{indir}{rcp}/ffdi_input_variables_{rcp}_{row['fut']}_*")))
+
+            # Make a dictionary of cubes for all variables  ...
+            all_var_cubes = {}
+            for v in vars:
+                print(f"   ... {v}")
+
+                # Do all the same loading things ...
+                var_cubes = iris.load(var_filelist, v)  # baseline and future variable
+                for j in range(len(var_cubes)):
+                    try:
+                        var_cubes[j].remove_coord('forecast_reference_time')
+                        var_cubes[j].remove_coord('forecast_period')
+                        var_cubes[j].remove_coord('year')
+                    except:
+                        continue
+
+                unify_time_units(var_cubes)
+                all_var_cubes[v] = var_cubes.concatenate_cube()
+
+            # Time subset of ffdi and variables
+            tcon_dict = {}
+            # Baseline
+            hist_start = cftime.Datetime360Day(bl_start_yr, 1, 1)
+            hist_end = cftime.Datetime360Day(bl_start_yr + 20, 1, 1)
+            hist_tcon = iris.Constraint(time=lambda cell: hist_start <= cell.point < hist_end)
+            tcon_dict['Baseline'] = hist_tcon
+
+            # GWL 1.5C
+            gwl1p5_start = cftime.Datetime360Day(row['gwl_1_5_start'], 1, 1)
+            gwl1p5_end = cftime.Datetime360Day(row['gwl_1_5_start'] + 20, 1, 1)
+            gwl1p5_tcon = iris.Constraint(time=lambda cell: gwl1p5_start <= cell.point < gwl1p5_end)
+            tcon_dict['GWL1.5'] = gwl1p5_tcon
+
+            # GWL 2C
+            try:
+                gwl2_start = cftime.Datetime360Day(row['gwl_2_start'], 1, 1)
+                gwl2_end = cftime.Datetime360Day(row['gwl_2_start'] + 20, 1, 1)
+                gwl2_tcon = iris.Constraint(time=lambda cell: gwl2_start <= cell.point < gwl2_end)
+                tcon_dict['GWL2'] = gwl2_tcon
+            except:
+                pass
+
+            # GWL 4C
+            try:
+                gwl4_start = cftime.Datetime360Day(row['gwl_4_start'], 1, 1)
+                gwl4_end = cftime.Datetime360Day(row['gwl_4_start'] + 20, 1, 1)
+                gwl4_tcon = iris.Constraint(time=lambda cell: gwl4_start <= cell.point < gwl4_end)
+                tcon_dict['GWL4'] = gwl4_tcon
+            except:
+                pass
+
+            # Loop through the time constraints and extract all the grid cells with data
+            print(f'   Extracting time slices')
+            dfout = {}
+            for key, tcon in tcon_dict.items():
+                print(f'   ... {key}: FFDI, ')
+                # Extract the days in the time constraint
+                ffdi_tconned = ffdi_cube.extract(tcon)
+                # Mask according to the min and max thresholds
+                ffdi_tconned.data = ma.masked_where((ffdi_tconned.data < mint) | (ffdi_tconned.data >= maxt), ffdi_tconned.data)
+                # Do the masking and convert to pandas dataframe
+                tmp = mask2df(ffdi_tconned, ~ma.getmask(ffdi_tconned.data), 'FFDI', key, row['fut'], row['rcp'])
+
+                if isinstance(dfout, dict):
+                    dfout = tmp.copy()
+                else:
+                    dfout = pd.concat([dfout, tmp])
+
+                for k in all_var_cubes.keys():
+                    print(f"   ... {key}: {k}")
+                    var_tconned = all_var_cubes[k].extract(tcon)
+                    varout = mask2df(var_tconned, ~ma.getmask(ffdi_tconned.data), k, key, row['fut'], row['rcp'])
+                    dfout = pd.concat([dfout, varout])
+
+            # NB: dfout contains all the GWLs (i.e. time slices) for this ens member
+            # This pivot widens the var column, to give a column per category
+            # Therefore each row is a unique combination of t-x-y-gwl
+            odf_wide = pd.pivot_table(dfout, values="value", index=['t', 'x', 'y', 'gwl', 'ipcc', 'ensemble_member', 'rcp'], columns=["var"])
+            odf_wide.reset_index(inplace=True)
+            ### Probably need to sample here, in order to reduce the size of the output ###
+            # odf_wide_ss = odf_wide.sample(n=10000, replace=False, axis='index', ignore_index=True)
+            odf_wide_ss = odf_wide.groupby(['gwl', 'ipcc']).sample(n=100, replace=True)  # axis='index', ignore_index=True
+            # Concatenate with existing output, and on to the next ensemble member
+            df_final = pd.concat([df_final, odf_wide_ss])
+            # Now save the current state of df_final to a temporary file
+            df_final.to_csv(ofile)
+
+    return df_final
+
+
+def mask2df(cube, mask_arr, varname, gwlname, ensmem, rcp):
+    """
+    Mask the cube data using the mask, and creates a pandas dataframe using the additional metadata
+    :param cube: 3D cube containing the data to be extracted and masked
+    :param mask_arr: 3D numpy.ma mask (assumes mask=False for cells we want to keep)
+    :param varname: variable name
+    :param gwlname: global warming level name
+    :param ensmem: ensemble members name
+    :param rcp: RCP name
+    :return: pandas dataframe
+    """
+
+    value = ma.getdata(cube.data)[mask_arr].flatten()
+
+    myu = cube.coord('time').units
+    t = cube.coord('time').points
+    y = cube.coord('latitude').points
+    x = cube.coord('longitude').points
+    ts, ys, xs = np.meshgrid(t, y, x, sparse=False, indexing='ij')
+
+    ts_out = ts[mask_arr].flatten()
+    xs_out = [((x + 180) % 360) - 180 for x in xs[mask_arr].flatten()]  # Corrects for 0 to 360 problem
+    ys_out = ys[mask_arr].flatten()
+
+    points = gpd.GeoDataFrame(geometry=gpd.points_from_xy(x=xs_out, y=ys_out), crs="EPSG:4326")
+    inshp = '/net/home/h02/hadhy/PycharmProjects/impactstoolbox/impactstoolbox/data/IPCC-WGI-reference-regions-v4.shp'
+    ipcc = gpd.read_file(inshp, crs="epsg:4326")
+    sj = points.sjoin(ipcc, how="left")
+    sj.reset_index(inplace=True)
+    sj.drop_duplicates(subset=['index', 'geometry'], keep='first', inplace=True)
+
+    # The most likely cause of problems could be due to the joined data not having the same number of records as
+    # other records
+    # print(len(xs_out))
+    # print(len(sj['Acronym'].to_list()))
+
+    dfout = pd.DataFrame({'t': myu.num2date(ts_out), 'x': xs_out, 'y': ys_out, 'value': value, 'var': varname,
+                          'ipcc': sj['Acronym'].to_list(), 'gwl': gwlname, 'ensemble_member': ensmem, 'rcp': rcp})  #
+
+    return dfout
+
+
 def get_data_to_plot(type, bl_start_yr, df, climatology=True):
     '''
 
@@ -154,7 +350,7 @@ def get_data_to_plot(type, bl_start_yr, df, climatology=True):
         ##########
         # Get the pre-calculated FFDI (saved as a timeseries of baseline + future, based on future ens_member_id
         print('   Loading FFDI ... ', end='')
-        ffdi_file = '/scratch/hadhy/fire/ffdi_output/'+rcp+'/ffdi_joined_'+rcp+'_'+row['fut']+'.nc'
+        ffdi_file = '/scratch/hadhy/fire/ffdi_output_joined/'+rcp+'/ffdi_joined_'+rcp+'_'+row['fut']+'.nc'
         print(ffdi_file)
         ffdi_cube = iris.load_cube(ffdi_file) # baseline and futurev
         # Time subset of ffdi
@@ -506,17 +702,21 @@ def plot_cell_climatologies(df):
     p.savefig('/data/users/hadhy/ESMS/fire_paper/plots/figure_allvars_nopoints_RCP-xaxis.png')
 
 
-def main():
+def main_old():
+    # This code produced plots with outliers in the variable relationships.
+    # I think it was due to problems with the masking. I only looked at grid cells where FFDI>24 was recorded for a
+    # certain number of days. This may have introduced some erros
 
-    # Get the data from MASS
-    if not os.path.isdir("/scratch/hadhy/fire/ffdi_output/rcp2_6/"):
-        os.makedirs("/scratch/hadhy/fire/ffdi_output/rcp2_6/")
-    if not os.path.isdir("/scratch/hadhy/fire/ffdi_output/rcp8_5/"):
-        os.makedirs("/scratch/hadhy/fire/ffdi_output/rcp8_5/")
+    # Get the data from MASS. Possibly a problem withe the joined data, so using the above data instead
+    if not os.path.isdir("/scratch/hadhy/fire/ffdi_output_joined/rcp2_6/"):
+        os.makedirs("/scratch/hadhy/fire/ffdi_output_joined/rcp2_6/")
+    if not os.path.isdir("/scratch/hadhy/fire/ffdi_output_joined/rcp8_5/"):
+        os.makedirs("/scratch/hadhy/fire/ffdi_output_joined/rcp8_5/")
 
-    subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp2_6_joined/*.nc", "/scratch/hadhy/fire/ffdi_output/rcp2_6/"])
-    subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp8_5_joined/*.nc", "/scratch/hadhy/fire/ffdi_output/rcp8_5/"])
+    subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp2_6_joined/*.nc", "/scratch/hadhy/fire/ffdi_output_joined/rcp2_6/"])
+    subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp8_5_joined/*.nc", "/scratch/hadhy/fire/ffdi_output_joined/rcp8_5/"])
 
+    # Getting FFDI input variables from MASS
     if not os.path.isdir("/scratch/hadhy/fire/ffdi_input_variables/rcp2_6/"):
         os.makedirs("/scratch/hadhy/fire/ffdi_input_variables/rcp2_6/")
     if not os.path.isdir("/scratch/hadhy/fire/ffdi_input_variables/rcp8_5/"):
@@ -567,6 +767,39 @@ def main():
 
     df = pd.concat([df2p_baseline, df2p_gwl1p5, df2p_gwl2, df2p_gwl4], ignore_index=True)
     plot_rh_vs_temp(df)
+
+
+def main():
+
+    # # Get the data from MASS. This is the actual data that we will use ...
+    # if not os.path.isdir("/scratch/hadhy/fire/ffdi_output/rcp2_6/"):
+    #     os.makedirs("/scratch/hadhy/fire/ffdi_output/rcp2_6/")
+    # if not os.path.isdir("/scratch/hadhy/fire/ffdi_output/rcp8_5/"):
+    #     os.makedirs("/scratch/hadhy/fire/ffdi_output/rcp8_5/")
+    #
+    # subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp2_6/ffdi_outputs/*.nc", "/scratch/hadhy/fire/ffdi_output/rcp2_6/"])
+    # subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp8_5/ffdi_outputs/*.nc", "/scratch/hadhy/fire/ffdi_output/rcp8_5/"])
+    #
+    # # Getting FFDI input variables from MASS
+    # if not os.path.isdir("/scratch/hadhy/fire/ffdi_input_variables/rcp2_6/"):
+    #     os.makedirs("/scratch/hadhy/fire/ffdi_input_variables/rcp2_6/")
+    # if not os.path.isdir("/scratch/hadhy/fire/ffdi_input_variables/rcp8_5/"):
+    #     os.makedirs("/scratch/hadhy/fire/ffdi_input_variables/rcp8_5/")
+    #
+    # subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp2_6/ffdi_input_variables*.nc", "/scratch/hadhy/fire/ffdi_input_variables/rcp2_6/"])
+    # subprocess.run(["moo", "get", "-v", "moose:/adhoc/users/inika.taylor/fire/rcp8_5/ffdi_input_variables*.nc", "/scratch/hadhy/fire/ffdi_input_variables/rcp8_5/"])
+
+    # Load the ensemble jobids and GWLs
+    ensdf = get_ens_df()
+    # plot_gwl_year(ensdf)
+
+    # Get all data to plot
+    df_12_24 = get_variables_by_ffdi_theshold(ensdf, 12, 24)
+    df_12_24.to_csv('/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_12_to_24.csv')
+    df_gt_24 = get_variables_by_ffdi_theshold(ensdf, 24, np.inf)
+    df_gt_24.to_csv('/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_gt_24.csv')
+
+
 
 
 if __name__ == '__main__':

@@ -1,10 +1,10 @@
 #!/bin/bash -l
-#SBATCH --qos=long
-#SBATCH --mem=20000
-#SBATCH --ntasks=2
+#SBATCH --qos=long # high
+#SBATCH --mem=50000
+#SBATCH --ntasks=10
 #SBATCH --output=/scratch/hadhy/ffdi_fire_paper_%j_%N.out
-#SBATCH --time=4320 #360
+#SBATCH --time=4320  #4320 #360
 
-conda activate scitools
+conda activate impacts_toolbox
 
 python ffdi_variables_analysis.py
