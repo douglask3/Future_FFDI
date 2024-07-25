@@ -127,7 +127,7 @@ def load_files(file_list, start_yr):
         return cubelist
 
 
-def get_variables_by_ffdi_theshold(df, mint, maxt, ofile):
+def get_variables_by_ffdi_theshold(df, mint, maxt, ofile, country_list=['Australia', 'United States of America', 'Brazil']):
     """
     Gets a massive dataframe of FFDI value (>=12) with each variable per grid cell per day
     :param df: Dataframe that tells us for each ens member what the start year is for each GWL
@@ -254,7 +254,7 @@ def get_variables_by_ffdi_theshold(df, mint, maxt, ofile):
                 burnable_allts = np.broadcast_to(ma.getmask(burnable.data), ffdi_tconned.shape)
                 fullmask = burnable_allts | ma.getmask(ffdi_tconned.data)
                 # Do the masking and convert to pandas dataframe
-                tmp = mask2df(ffdi_tconned, fullmask, 'FFDI', key, row['fut'], row['rcp'])
+                tmp = mask2df(ffdi_tconned, fullmask, 'FFDI', key, row['fut'], row['rcp'], country_list=country_list)
 
                 if isinstance(dfout, dict):
                     dfout = tmp.copy()
@@ -264,7 +264,7 @@ def get_variables_by_ffdi_theshold(df, mint, maxt, ofile):
                 for k in all_var_cubes.keys():
                     print(f"   ... {key}: {k}")
                     var_tconned = all_var_cubes[k].extract(tcon)
-                    varout = mask2df(var_tconned, fullmask, k, key, row['fut'], row['rcp'])
+                    varout = mask2df(var_tconned, fullmask, k, key, row['fut'], row['rcp'], country_list=country_list)
                     # varout = mask2df(var_tconned, ~ma.getmask(ffdi_tconned.data), k, key, row['fut'], row['rcp'])
                     dfout = pd.concat([dfout, varout])
 
@@ -287,7 +287,7 @@ def get_variables_by_ffdi_theshold(df, mint, maxt, ofile):
     return df_final
 
 
-def mask2df(cube, mask_arr, varname, gwlname, ensmem, rcp, region_name='natural_earth_v5_0_0.countries_110'):
+def mask2df(cube, mask_arr, varname, gwlname, ensmem, rcp, region_name='natural_earth_v5_0_0.countries_110', country_list=['Australia', 'United States of America', 'Brazil']):
     """
     Mask the cube data using the mask, and creates a pandas dataframe using the additional metadata
     :param cube: 3D cube containing the data to be extracted and masked
@@ -297,6 +297,7 @@ def mask2df(cube, mask_arr, varname, gwlname, ensmem, rcp, region_name='natural_
     :param ensmem: ensemble members name
     :param rcp: RCP name
     :param region_name: could be 'ipcc' or anything accepted by regionmask. Options include all those available in regionmask: ['ar6.all', 'ar6.land', 'ar6.ocean', 'natural_earth_v5_0_0.countries_110', 'natural_earth_v5_0_0.countries_50', 'natural_earth_v5_0_0.countries_10','natural_earth_v5_0_0.land_110', 'natural_earth_v5_0_0.ocean_basins_50']
+    :param countries: list of countries to extract
     :return: pandas dataframe
     """
     import regionmask
@@ -323,7 +324,7 @@ def mask2df(cube, mask_arr, varname, gwlname, ensmem, rcp, region_name='natural_
         regions = getattr(getattr(regionmask.defined_regions, region_name.split('.')[0]), region_name.split('.')[1])
         shp = regions.to_geodataframe()
         shp = shp.set_crs(epsg=4326, allow_override=True)
-        shp = shp[shp['names'].isin(['Australia', 'United States of America', 'Brazil'])]
+        shp = shp[shp['names'].isin(country_list)]
 
     sj = points.sjoin(shp, how="left")
     sj.reset_index(inplace=True)
@@ -829,10 +830,14 @@ def main():
     # plot_gwl_year(ensdf)
 
     # Get all data to plot
-    df_12_24 = get_variables_by_ffdi_theshold(ensdf, 12, 24, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_12_to_24.csv')
-    # df_12_24.to_csv('/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_12_to_24.csv')
-    df_gt_24 = get_variables_by_ffdi_theshold(ensdf, 24, np.inf, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_gt_24.csv')
-    # df_gt_24.to_csv('/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_gt_24.csv')
+    countries_3 = ['Australia', 'United States of America', 'Brazil']
+    countries_4 = ['Australia', 'United States of America', 'Brazil', 'South Africa']
+    ## 3 countries
+    df_12_24 = get_variables_by_ffdi_theshold(ensdf, 12, 24, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_12_to_24.csv', country_list=countries_3)
+    df_gt_24 = get_variables_by_ffdi_theshold(ensdf, 24, np.inf, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_3countries_gt_24.csv', country_list=countries_3)
+    ## 4 countries
+    df_12_24 = get_variables_by_ffdi_theshold(ensdf, 12, 24, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_4countries_12_to_24.csv', country_list=countries_4)
+    df_gt_24 = get_variables_by_ffdi_theshold(ensdf, 24, np.inf, ofile='/data/users/hadhy/ESMS/fire_paper/data/odf_bigdata_4countries_gt_24.csv', country_list=countries_4)
 
 
 if __name__ == '__main__':
