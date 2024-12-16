@@ -21,9 +21,10 @@ def get_characters_after_string(input_string, search_string, num_characters):
     else:
         return "Search string not found in input string"
 
-def calculate_time(rcp, member, hmember, GWL, nyear = 20, country = ''):
+def calculate_time(rcp, member, hmember, GWL, nyear = 20, country = '', 
+                   bare_mask = '/project/climate_impacts/durban/wp3_results/fire/SAGE_bare_soil_ice_mask_regrid_gt50.pp'):
     
-    out_file = 'temp/time_in_catigory_4' + country + '_' + rcp + GWL + member + str(nyear) + '.csv'
+    out_file = 'temp/time_in_catigory_7' + country + '_' + rcp + GWL + member + str(nyear) + '.csv'
     
     print(out_file)
     
@@ -39,56 +40,86 @@ def calculate_time(rcp, member, hmember, GWL, nyear = 20, country = ''):
     for file_name in file_list:
         cubelist.extend(iris.load(os.path.join(directory, file_name)))
     cubelist.extend(iris.load(directory + 'ffdi_' + rcp + '_' + hmember + '_1970s_2000s.nc'))
-    #set_trace()
+    
     ffdi = cubelist.concatenate_cube()
+    
     #ffdi_file = ffdis_dir + rcp '/ffdi_joined_' + rcp + '_' + member + '.nc'
     #ffdi = iris.load_cube(ffdi_file)
+    
+    bare_mask = iris.load_cube(bare_mask)
     if country != '':
         ffdi = constrain_natural_earth(ffdi, country)
+        bare_mask = constrain_natural_earth(bare_mask, country)
+    iris.coord_categorisation.add_day_of_year(ffdi, 'time')
     print(start_fname)
     GWL_file = GWL_dir + rcp + '/' + rcp + 'gwl_' + GWL + '.txt'
-    
-    if GWL == 'None':
-        year = '2005'
+    year0 = [1986, 2005]
+    if GWL == 'Baseline':
+        year = None 
+    elif GWL == 'None':
+        year = ', 2004, 2023'
     else:
         gwls = open(GWL_file).read()
-        year = get_characters_after_string(gwls, member, 6)[2:]
-    if year == 'nan,':
+        year = get_characters_after_string(gwls, member, 12)
+        
+    
+    if year is not None and 'nan,' in year:
         out = np.empty((len(ffdi_ranges)))
         out[:] = np.nan
     else:
+        
         cube_years = ffdi.coord('year').points
 
-        index = np.where((cube_years > float(year)- nyear - 1) & \
-                         (cube_years < float(year)))[0]
+        def extra_dates(yeari):       
+            index = np.where((cube_years >= yeari[0]) & (cube_years <= yeari[1]))[0]
+            cube  = ffdi[index].copy()
+            return(cube)
         
-        iris.coord_categorisation.add_day_of_year(ffdi, 'time')
-        cube  = ffdi[index].copy()
+        cube0 = extra_dates(year0)
+        if year is None: 
+            cube = None
+        else:
+            year = [float(year[2:6]), float(year[8:12])]
+            cube  = extra_dates(year)
         
         #clim = cube.aggregated_by('day_of_year', iris.analysis.MEAN)
         #clim0 = cube0.aggregated_by('day_of_year', iris.analysis.MEAN).data
         
-        def no_days_at_ffdi(ffdi_range, clim):
-            mask = np.logical_or(cube.data < ffdi_range[0], cube.data > ffdi_range[1])
+        def no_days_at_ffdi(ffdi_range, cube0, cube, bare_mask):
+            #mask = np.logical_or(cube.data < ffdi_range[0], cube.data > ffdi_range[1])
+            
+            def mean_exceedance(icube):
+                r = icube.copy() 
+                r.data = r.data > ffdi_range
+                r = r.collapsed('time', iris.analysis.MEAN)
+                r.data = r.data * 365
+                return(r)
+            
+            exceed0 = mean_exceedance(cube0)
+            if cube is None: 
+                diff = exceed0
+            else:
+                exceed  = mean_exceedance(cube)
+                diff = exceed - exceed0
+            diff.data[~bare_mask.data.mask] = np.nan
+            diff.data.mask[np.isnan(diff.data)] = True
             #masked_cube = clim.copy(data=np.ma.masked_where(~mask, clim.data))
             try:
-                cube.coord("longitude").guess_bounds()
+                diff.coord("longitude").guess_bounds()
             except:
                 pass
             try:
-                cube.coord("latitude").guess_bounds()
+                diff.coord("latitude").guess_bounds()
             except:
                 pass
-            area_weights = iris.analysis.cartography.area_weights(cube)
+            area_weights = iris.analysis.cartography.area_weights(diff)
             
-            return np.sum(area_weights[~mask])
+            return  diff.collapsed(['longitude', 'latitude'], iris.analysis.MEAN,  weights = area_weights).data
             
-            
-        out = [no_days_at_ffdi(ffdi_range, cube) for ffdi_range in ffdi_ranges]
-        
-
-        out = out/np.sum(out)
-        
+        out = [no_days_at_ffdi(ffdi_range, cube0, cube, bare_mask) \
+                    for ffdi_range in ffdi_ranges]
+        out = np.array(out) 
+        #out = out/np.sum(out)
         
     df = pd.DataFrame(out)
     df.to_csv(out_file)
@@ -104,9 +135,8 @@ def for_region(country):
         for gwl in global_warming_level:
             outi = np.array([calculate_time(sc, member, hmember, gwl, country = country)[0,:] \
                              for member, hmember in zip(members[sc], hist_members)])
-            outi = outi*365
             
-            out_sc.append(outi)
+            out_all.append(np.nanpercentile(outi, np.array([10, 50, 90]), axis = 0))
             
             #out.append(np.transpose(np.percentile(outi, np.array([10, 50, 90]), axis = 0)))
             cname = sc + '-' + gwl + '-'
@@ -114,18 +144,49 @@ def for_region(country):
             colnames.append(cname + '50')
             colnames.append(cname + '90')
         
-        out = [np.percentile(out_sc[0], np.array([10, 50, 90]), axis = 0)]
-        for i in  range(1,len(global_warming_level)):
-           out.append(np.percentile(out_sc[i] - out_sc[0], np.array([10, 50, 90]), axis = 0))
-        set_trace()
-        out_all.append(np.concatenate(out, axis=0))
+        #out = [np.percentile(out_sc[0], np.array([10, 50, 90]), axis = 0)]
+        #for i in  range(1,len(global_warming_level)):
+        #   out.append(np.percentile(out_sc[i] - out_sc[0], np.array([10, 50, 90]), axis = 0))
+        #set_trace()
+        #out_all.append(np.concatenate(out, axis=0))
 
-    set_trace()
-    #np.savetxt('outputs/cal_time.csv', out, delimiter=',',
-     #          header=','.join(colnames), comments='', fmt='%0.8f')
-    rownames = [str(x[0]) + '-' + str(x[1]) for x in ffdi_ranges]
+    out = np.transpose(np.concatenate(out_all, axis=0))
+    #np.savetxt('outputs/cal_time.csv', out, 
+    #            delimiter=',',
+    #            header=','.join(colnames), comments='', fmt='%0.8f')
+    
+    rownames = ['>' + str(x) for x in ffdi_ranges]
     df = pd.DataFrame(out, index=rownames, columns=colnames)
     df = df.to_csv('outputs/cal_time-' + country + '.csv')
+    df = pd.DataFrame(np.transpose(np.round(out, 3)), columns = rownames, index = colnames)
+    df = combine_ranges(df)
+    return df
+    df = df.to_csv('outputs/cal_time-tidy' + country + '.csv')
+
+def combine_ranges(df):
+    N = 9  # Adjust this value as needed
+
+    # Extracting the first N digits from the existing row names
+    rnames = df.iloc[::3].index
+
+    # Create an empty DataFrame to store the combined rows along with existing columns
+    columns_to_preserve = df.columns.tolist()  # Get existing column names
+    #columns_to_preserve.remove('YourColumnName')  # Remove the column you want to combine
+    combined_df = pd.DataFrame(columns=df.columns)
+
+    # Iterate through the rows of the original DataFrame in steps of three
+    for i in range(0, len(df), 3):
+        # Combine the values in each column for the group of three rows
+        combined_values = df.iloc[i:i+3].apply(lambda x: f"{x.iloc[0]} ({x.iloc[1]} - {x.iloc[2]})")
+
+        # Append the combined values to the new DataFrame
+        combined_df = combined_df.append(combined_values, ignore_index=True)
+    combined_df.index = rnames
+    
+    return combined_df
+    
+
+    
     
 
 if __name__=="__main__":
@@ -161,12 +222,31 @@ if __name__=="__main__":
                           'aldsq']}
     
     scenario_name = ['rcp2_6', 'rcp8_5']
-    global_warming_level = ['None', '1_5', '2_deg', '4_deg']
-    ffdi_ranges = [[0.0, 12.0], [12.0, 24.0], [24.0, 50.0],[50.0, 75.0], [75.0, 100.0], [100.0, 9999999.0]]
+    global_warming_level = ['Baseline', 'None', '1_5', '2_deg', '4_deg']
+    ffdi_ranges = [12.0, 24.0, 50.0, 75.0, 100.0]
     countries = ['', 'Australia', 'Brazil', 'United States of America']
-    #for_region(countries)
-    [for_region(country) for country in countries]
 
+    #for_region(countries)
+    dfs = [for_region(country) for country in countries]
+    
+    first_rows = [df.iloc[0] for df in dfs]
+
+    # Concatenating first rows into a new dataframe
+    result_df = pd.concat(first_rows, axis = 1)
+
+# Extracting subsequent rows and concatenating them in a cyclic manner
+    for i, df in enumerate(dfs):
+        rows = [df.iloc[j] for j in range(1, len(df))]
+        cyclic_rows = rows[i:] + rows[:i]  # Shifting rows cyclically
+        set_trace()
+        result_df = pd.concat([result_df] + cyclic_rows)
+    
+# Resetting index of the result dataframe
+    #result_df.reset_index(drop=True, inplace=True)
+    result_df = result_df.transpose()
+    # Update the index of the combined DataFrame with the extracted row name prefixes
+    
+    df = result_df.to_csv('outputs/cal_time-tidy.csv')
     #ffdi_ranges = [[0.0, 4.0], [4.0, 15.0], [15.0, 9999999.0]]
     #for_region(countries)
     #[for_region(country) for country in countries]
