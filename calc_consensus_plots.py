@@ -324,8 +324,8 @@ def main():
                 'aldsi', 'aldsj', 'aldsl', 'aldsn', 'aldso', 'aldsp', 'aldsq']
     scenario = ['rcp2_6', 'rcp8_5']
     scenario_labels = ['RCP2.6', 'RCP8.5']
-    threshold = ['4-15', '12-23', '23-10000000']#,'SEVERE']
-    threshold_labels = ['Control Burn', 'High', 'Very High']#, 'Severe']
+    threshold = ['0-11', '4-15', '12-23', '23-10000000']#,'SEVERE']
+    threshold_labels = ['Low Mod.', 'Control Burn', 'High', 'Very High']#, 'Severe']
     byears = '1986_2005'
     baseline_label = '1986-2005'
     fyears = ['1_5', '2_deg', '4_deg']

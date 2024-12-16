@@ -270,5 +270,6 @@ if __name__ == '__main__':
 
     #Very High FFDI
     main(threshold_level = [4, 15])
+    main(threshold_level = [0, 11])
     main(threshold_level = [12, 23])
     main(threshold_level = [23, 10000000])
