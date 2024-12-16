@@ -68,8 +68,8 @@ def main():
     scenario_labels = ['RCP2.6', 'RCP8.5']
     #threshold = ['Very_High','SEVERE']
     #threshold_labels = ['Very High', 'Severe']
-    threshold = ['4-15']
-    threshold_labels = ['4-15']    
+    threshold = ['4-15', '0-11', '12-23', '23-10000000']
+    threshold_labels = ['Sholder', 'Low-Mod', 'High', 'VHigh_plus']    
     global_warming_level = ['1_5', '2_deg', '4_deg']
     gwl_labels = ['1.5 degrees', '2.0 degrees', '4.0 degrees']
     region = ['Global', 'Australia', 'Brazil', 'United States']
@@ -166,6 +166,7 @@ def main():
                                 try:
                                     region_cube = iris.load_cube(region_filename)
                                 except:
+                                    print("cube not loaded")
                                     set_trace()
                                 #print(region_cube)
 
