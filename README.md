@@ -13,13 +13,13 @@ This repository contains various Python and R scripts used for analyzing and vis
   Jupyter Notebook for plotting and fitting relationships between FFDI and its drivers.
 
 - **`calc_consensus_plots.py`**  
-  Written by Inika Taylor (Jan 2020) to create consensus plots, adapted from Chris Kent's consensus code. Generates consensus plots based on the processed FFDI data.
+  Creates consensus plots, adapted from Chris Kent's consensus code. Generates consensus plots based on the processed FFDI data.
 
 - **`calc_threshold_exceedance.py`**  
   Calculates the number of times the FFDI exceeds a specified daily threshold for each 20-year period of interest (threshold exceedance).
 
 - **`centile_calc_table_cp.py`**  
-  (Feb 2020) Reads in anomalies of the number of days above the FFDI threshold, averages for a region, and calculates the 10th, 50th, and 90th percentiles. Outputs these values in a table for each FFDI category.
+  Reads in anomalies of the number of days above the FFDI threshold, averages for a region, and calculates the 10th, 50th, and 90th percentiles. Outputs these values in a table for each FFDI category.
 
 - **`ffdi_time_between_vals_v2.r`**  
   R script that plots the amount of time in each FFDI category for each region, using the Python script `calc_threshold_exceedance.py`.
@@ -36,12 +36,25 @@ This repository contains various Python and R scripts used for analyzing and vis
 ## Usage
 
 ### Requirements
-Make sure you have the following dependencies installed:
+A few dependencies are required:
 
 - Python 3.x
-- R (for `ffdi_time_between_vals_v2.r`)
-- Relevant Python packages (listed below)
-- Bash shell (for running `mass_comands.sh`)
+- R (for `ffdi_time_between_vals_v2.r`)- **pandas**: Data manipulation and analysis.
+- **cftime**: Support for handling dates and times in netCDF files.
+- **iris**: A library for working with climate and weather data, including multidimensional arrays.
+- **numpy**: Fundamental package for scientific computing with Python.
+- **matplotlib**: Plotting library for creating static, animated, and interactive visualizations in Python.
+- **cartopy**: A library for cartographic projections and geospatial visualizations.
+- **ascend**: (Please ensure you have the correct version based on your system setup. This package is used for specialized computations in the project.)
+- **glob**: Used for file path manipulation and pattern matching.
+- **iris.coord_categorisation**: Used for categorizing coordinates in Iris cubes.
+- **iris.plot**: Used for plotting data from Iris cubes.
+- **iris.quickplot**: A simplified plotting interface for Iris.
+- **matplotlib.colors**: A module from Matplotlib for working with colors in visualizations.
+- **numpy.ma**: A module from NumPy for working with masked arrays.
+- **pdb**: Python debugger (used for debugging, typically in development stages).
+
+For some, you may also need the constrain_cubes_standard fucntion that can be found at https://github.com/douglask3/Bayesian_fire_models/blob/main/libs/constrain_cubes_standard.py
 
 ### Setup and Execution
 
@@ -80,15 +93,3 @@ The scripts will generate various outputs, including:
 - Tables of threshold exceedance
 - Percentile calculations for FFDI anomalies
 
-### Notes
-
-- Make sure to properly configure any file paths in the scripts for your environment.
-- If you encounter any errors or unexpected behavior, please refer to the script documentation or create an issue in the GitHub repository.
-
-## Contributing
-
-Contributions to improve the code or add new features are welcome! Please fork the repository, make your changes, and submit a pull request.
-
-## License
-
-This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
